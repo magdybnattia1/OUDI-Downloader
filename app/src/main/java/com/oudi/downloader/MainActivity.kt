@@ -48,10 +48,10 @@ private data class DownloadFormat(
 )
 
 private fun buildDownloadFileName(requestedName: String, guessedName: String): String {
-    val fallback = guessedName.substringAfterLast('/').substringAfterLast('\\\\').ifBlank { "download" }
+    val fallback = guessedName.substringAfterLast('/').substringAfterLast('\\').ifBlank { "download" }
     val cleaned = requestedName.trim()
         .substringAfterLast('/')
-        .substringAfterLast('\\\\')
+        .substringAfterLast('\\')
         .map { ch ->
             if (ch.isISOControl() || ch in ":*?\"<>|") '_' else ch
         }
