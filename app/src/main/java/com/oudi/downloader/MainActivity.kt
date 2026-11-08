@@ -33,11 +33,14 @@ private val Panel = Color(0xFF1B1B1B)
 private val Muted = Color(0xFFB9B2A1)
 
 private fun buildDownloadFileName(requestedName: String, guessedName: String): String {
-    val fallback = guessedName.substringAfterLast('/').substringAfterLast('\\\\').ifBlank { "download" }
+    val fallback = guessedName.substringAfterLast('/').substringAfterLast('\\').ifBlank { "download" }
     val cleaned = requestedName.trim()
         .substringAfterLast('/')
-        .substringAfterLast('\\\\')
-        .replace(Regex("[\\\\p{Cntrl}:*?\\\"<>|]"), "_")
+        .substringAfterLast('\\')
+        .map { ch ->
+            if (ch.isISOControl() || ch in ":*?\"<>|") '_' else ch
+        }
+        .joinToString("")
         .take(120)
     if (cleaned.isBlank()) return fallback
 
