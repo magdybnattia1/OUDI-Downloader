@@ -2,6 +2,7 @@ package com.oudi.downloader
 
 import android.app.DownloadManager
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
@@ -101,7 +102,7 @@ private fun OudiApp(context: Context) {
                                 if (!(clean.startsWith("https://") || clean.startsWith("http://"))) {
                                     status = "أدخل رابط HTTP أو HTTPS صحيحًا"
                                 } else if (isYouTubePage) {
-                                    status = "رابط يوتيوب غير مدعوم حاليًا. التطبيق ينزّل الروابط المباشرة للملفات فقط، وليس صفحات أو روابط مشاهدة يوتيوب."
+                                    status = "تم التعرف على رابط يوتيوب. لا يمكن تنزيل صفحة المشاهدة مباشرة؛ يمكنك فتح الفيديو عبر تطبيق يوتيوب الرسمي."
                                 } else {
                                     try {
                                         val fileName = URLUtil.guessFileName(clean, null, null)
@@ -127,6 +128,32 @@ private fun OudiApp(context: Context) {
                             Icon(Icons.Default.Download, null)
                             Spacer(Modifier.width(8.dp))
                             Text("ابدأ التحميل", fontWeight = FontWeight.Bold)
+                        }
+                        val cleanForYouTube = url.trim()
+                        val parsedForYouTube = runCatching { Uri.parse(cleanForYouTube) }.getOrNull()
+                        val youtubeHost = parsedForYouTube?.host?.lowercase().orEmpty()
+                        val isYouTubeLink = youtubeHost == "youtu.be" ||
+                            youtubeHost == "youtube.com" || youtubeHost.endsWith(".youtube.com") ||
+                            youtubeHost == "youtube-nocookie.com" || youtubeHost.endsWith(".youtube-nocookie.com")
+                        if (isYouTubeLink) {
+                            Spacer(Modifier.height(10.dp))
+                            OutlinedButton(
+                                onClick = {
+                                    try {
+                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(cleanForYouTube))
+                                        context.startActivity(intent)
+                                    } catch (e: Exception) {
+                                        status = "تعذر فتح رابط يوتيوب"
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth().height(50.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Gold),
+                                shape = RoundedCornerShape(14.dp)
+                            ) {
+                                Icon(Icons.Default.PlayArrow, null)
+                                Spacer(Modifier.width(8.dp))
+                                Text("افتح الفيديو على يوتيوب")
+                            }
                         }
                     }
                 }
