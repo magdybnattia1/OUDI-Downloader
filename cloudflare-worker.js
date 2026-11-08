@@ -107,11 +107,11 @@ function decodeHtml(value) {
 }
 
 function findOgVideo(html) {
-  const metas = html.match(/<meta\\b[^>]*>/gi) || [];
+  const metas = html.match(/<meta\b[^>]*>/gi) || [];
   const values = {};
   for (const tag of metas) {
-    const property = tag.match(/(?:property|name)\\s*=\\s*["']([^"']+)["']/i)?.[1]?.toLowerCase();
-    const content = tag.match(/content\\s*=\\s*["']([^"']+)["']/i)?.[1];
+    const property = tag.match(/(?:property|name)\s*=\s*["']([^"']+)["']/i)?.[1]?.toLowerCase();
+    const content = tag.match(/content\s*=\s*["']([^"']+)["']/i)?.[1];
     if (property && content && ["og:video", "og:video:url", "og:video:secure_url"].includes(property)) {
       values[property] = decodeHtml(content);
     }
