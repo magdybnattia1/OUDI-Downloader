@@ -1,4 +1,5 @@
-name = "oudi-downloader-api"
+name = "oudi-downloader"
 main = "cloudflare-worker.js"
 compatibility_date = "2026-11-08"
 workers_dev = true
+preview_urls = false
