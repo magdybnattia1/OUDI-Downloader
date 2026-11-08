@@ -6,6 +6,8 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.webkit.URLUtil
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -26,6 +28,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLEncoder
 
 private val Gold = Color(0xFFD6AE45)
 private val Black = Color(0xFF101010)
@@ -119,24 +125,71 @@ private fun OudiApp(context: Context) {
                                 if (!(clean.startsWith("https://") || clean.startsWith("http://"))) {
                                     status = "أدخل رابط HTTP أو HTTPS صحيحًا"
                                 } else if (isYouTubePage) {
-                                    status = "تم التعرف على رابط يوتيوب. لا يمكن تنزيل صفحة المشاهدة مباشرة؛ يمكنك فتح الفيديو عبر تطبيق يوتيوب الرسمي."
+                                    status = "روابط YouTube لا يدعمها محرك التنزيل الخارجي؛ استخدم خيارات YouTube الرسمية."
                                 } else {
-                                    try {
-                                        val guessedFileName = URLUtil.guessFileName(clean, null, null)
-                                        val fileName = buildDownloadFileName(title, guessedFileName)
-                                        val request = DownloadManager.Request(Uri.parse(clean))
-                                            .setTitle(fileName)
-                                            .setDescription("OUDI Downloader")
-                                            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                                            .setAllowedOverMetered(true)
-                                            .setAllowedOverRoaming(false)
-                                            .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
-                                        val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-                                        val downloadId = manager.enqueue(request)
-                                        status = "تم إرسال طلب التحميل إلى أندرويد (رقم الطلب: $downloadId). تابع حالة التنزيل من إشعارات الهاتف أو تطبيق التنزيلات."
-                                    } catch (e: Exception) {
-                                        status = "تعذر بدء التحميل: ${e.message ?: "خطأ غير معروف"}"
-                                    }
+                                    status = "جاري فحص الرابط وتجهيز خيارات الملف..."
+                                    Thread {
+                                        var resultMessage = ""
+                                        var downloadUrl: String? = null
+                                        var serverFileName: String? = null
+                                        try {
+                                            val encoded = URLEncoder.encode(clean, "UTF-8")
+                                            val connection = (URL("https://oudi-downloader.mangalefi.workers.dev/api/inspect?url=$encoded").openConnection() as HttpURLConnection).apply {
+                                                requestMethod = "GET"
+                                                connectTimeout = 15000
+                                                readTimeout = 15000
+                                                setRequestProperty("Accept", "application/json")
+                                            }
+                                            try {
+                                                val code = connection.responseCode
+                                                val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+                                                val body = stream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                                                val json = JSONObject(body)
+                                                if (code !in 200..299 || !json.optBoolean("ok", false)) {
+                                                    resultMessage = json.optString("error", "تعذر فحص رابط الملف")
+                                                } else {
+                                                    val formats = json.optJSONArray("formats")
+                                                    if (formats == null || formats.length() == 0) {
+                                                        resultMessage = "لم يعثر السيرفر على صيغة تنزيل متاحة"
+                                                    } else {
+                                                        val format = formats.getJSONObject(0)
+                                                        downloadUrl = format.optString("url").takeIf { it.isNotBlank() }
+                                                        serverFileName = json.optString("fileName").takeIf { it.isNotBlank() && it != "null" }
+                                                        resultMessage = "تم فحص الرابط. الصيغة المتاحة: ${format.optString("label", "الصيغة الأصلية")}"
+                                                    }
+                                                }
+                                            } finally {
+                                                connection.disconnect()
+                                            }
+                                        } catch (e: Exception) {
+                                            resultMessage = "تعذر الاتصال بسيرفر OUDI: ${e.message ?: "تحقق من الإنترنت وحاول مجددًا"}"
+                                        }
+
+                                        Handler(Looper.getMainLooper()).post {
+                                            val finalUrl = downloadUrl
+                                            if (finalUrl == null) {
+                                                status = resultMessage
+                                            } else {
+                                                try {
+                                                    val guessedFileName = URLUtil.guessFileName(finalUrl, null, null)
+                                                    val preferredName = title.ifBlank { serverFileName.orEmpty() }
+                                                    val fileName = buildDownloadFileName(preferredName, guessedFileName)
+                                                    val request = DownloadManager.Request(Uri.parse(finalUrl))
+                                                        .setTitle(fileName)
+                                                        .setDescription("OUDI Downloader")
+                                                        .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                                                        .setAllowedOverMetered(true)
+                                                        .setAllowedOverRoaming(false)
+                                                        .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
+                                                    val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                                                    val downloadId = manager.enqueue(request)
+                                                    status = "$resultMessage — بدأ التنزيل إلى مجلد Downloads (رقم الطلب: $downloadId)."
+                                                } catch (e: Exception) {
+                                                    status = "تم فحص الرابط لكن تعذر بدء التنزيل: ${e.message ?: "خطأ غير معروف"}"
+                                                }
+                                            }
+                                        }
+                                    }.start()
                                 }
                             },
                             modifier = Modifier.fillMaxWidth().height(52.dp),
@@ -145,7 +198,7 @@ private fun OudiApp(context: Context) {
                         ) {
                             Icon(Icons.Default.Download, null)
                             Spacer(Modifier.width(8.dp))
-                            Text("ابدأ التحميل", fontWeight = FontWeight.Bold)
+                            Text("افحص الرابط وابدأ التحميل", fontWeight = FontWeight.Bold)
                         }
                         val cleanForYouTube = url.trim()
                         val parsedForYouTube = runCatching { Uri.parse(cleanForYouTube) }.getOrNull()
