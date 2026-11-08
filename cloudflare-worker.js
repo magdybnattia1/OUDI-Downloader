@@ -106,36 +106,61 @@ function decodeHtml(value) {
     .replace(/&quot;/g, '"').replace(/&#x27;|&#39;/g, "'");
 }
 
-function findOgVideo(html) {
+function extractFacebookVideoCandidates(html, pageUrl) {
+  const candidates = new Map();
+  const add = (raw, label) => {
+    if (!raw) return;
+    const decoded = decodeHtml(raw).replace(/\\\//g, "/").replace(/\\u0026/gi, "&");
+    let media;
+    try { media = new URL(decoded, pageUrl); } catch { return; }
+    if (media.protocol !== "https:" || !isFacebookMediaHost(media.hostname)) return;
+    const key = media.toString();
+    if (!candidates.has(key)) candidates.set(key, { url: key, label });
+  };
+
   const metas = html.match(/<meta\b[^>]*>/gi) || [];
-  const values = {};
   for (const tag of metas) {
     const property = tag.match(/(?:property|name)\s*=\s*["']([^"']+)["']/i)?.[1]?.toLowerCase();
     const content = tag.match(/content\s*=\s*["']([^"']+)["']/i)?.[1];
     if (property && content && ["og:video", "og:video:url", "og:video:secure_url"].includes(property)) {
-      values[property] = decodeHtml(content);
+      add(content, "فيديو Facebook المتاح");
     }
   }
-  return values["og:video:secure_url"] || values["og:video:url"] || values["og:video"] || null;
+
+  // Public page HTML may expose separate SD/HD CDN URLs in embedded JSON.
+  const fields = [
+    ["browser_native_hd_url", "HD"],
+    ["playable_url_quality_hd", "HD"],
+    ["playable_url", "الجودة المتاحة"]
+  ];
+  for (const [field, label] of fields) {
+    const pattern = new RegExp('"' + field + '"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)"', "g");
+    let match;
+    while ((match = pattern.exec(html)) !== null) {
+      try { add(JSON.parse('"' + match[1] + '"'), label); } catch { /* Ignore malformed embedded values. */ }
+    }
+  }
+  return [...candidates.values()];
 }
 
 async function inspectFacebookPage(pageUrl) {
   const html = await fetchFacebookPage(pageUrl);
-  const candidate = findOgVideo(html);
-  if (!candidate) {
-    throw new Error("لم يعرض Facebook رابط فيديو مباشرًا عامًا. قد يحتاج الرابط إلى تسجيل دخول أو لا يتيح Facebook تنزيله.");
-  }
-  let media;
-  try { media = new URL(candidate, pageUrl); } catch { throw new Error("رابط الفيديو الذي أعاده Facebook غير صالح"); }
-  if (media.protocol !== "https:" || !isFacebookMediaHost(media.hostname)) {
-    throw new Error("رابط الفيديو الناتج ليس من نطاق تنزيل Facebook المسموح");
+  const candidates = extractFacebookVideoCandidates(html, pageUrl);
+  if (candidates.length === 0) {
+    throw new Error("لم يعرض Facebook روابط فيديو مباشرة عامة. قد يحتاج الرابط إلى تسجيل دخول أو لا يتيح Facebook تنزيله.");
   }
   return {
     ok: true,
-    source: "facebook-public-og",
+    source: "facebook-public-page",
     contentType: "video/*",
     fileName: "facebook-video.mp4",
-    formats: [{ id: "facebook-original", label: "فيديو Facebook المتاح", mimeType: "video/*", size: null, url: media.toString() }]
+    formats: candidates.map((candidate, index) => ({
+      id: "facebook-" + (index + 1),
+      label: candidate.label,
+      mimeType: "video/mp4",
+      size: null,
+      url: candidate.url
+    }))
   };
 }
 
