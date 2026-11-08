@@ -93,21 +93,28 @@ private fun OudiApp(context: Context) {
                         Button(
                             onClick = {
                                 val clean = url.trim()
+                                val parsed = runCatching { Uri.parse(clean) }.getOrNull()
+                                val host = parsed?.host?.lowercase().orEmpty()
+                                val isYouTubePage = host == "youtu.be" || host == "youtube.com" ||
+                                    host.endsWith(".youtube.com") || host == "youtube-nocookie.com" ||
+                                    host.endsWith(".youtube-nocookie.com")
                                 if (!(clean.startsWith("https://") || clean.startsWith("http://"))) {
                                     status = "أدخل رابط HTTP أو HTTPS صحيحًا"
+                                } else if (isYouTubePage) {
+                                    status = "رابط يوتيوب غير مدعوم حاليًا. التطبيق ينزّل الروابط المباشرة للملفات فقط، وليس صفحات أو روابط مشاهدة يوتيوب."
                                 } else {
                                     try {
+                                        val fileName = URLUtil.guessFileName(clean, null, null)
                                         val request = DownloadManager.Request(Uri.parse(clean))
-                                            .setTitle(title.ifBlank { URLUtil.guessFileName(clean, null, null) })
+                                            .setTitle(title.ifBlank { fileName })
                                             .setDescription("OUDI Downloader")
                                             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                                             .setAllowedOverMetered(true)
                                             .setAllowedOverRoaming(false)
-                                            .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, URLUtil.guessFileName(clean, null, null))
+                                            .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
                                         val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-                                        manager.enqueue(request)
-                                        status = "تمت إضافة الملف إلى قائمة تنزيلات أندرويد"
-                                        url = ""
+                                        val downloadId = manager.enqueue(request)
+                                        status = "تم إرسال طلب التحميل إلى أندرويد (رقم الطلب: $downloadId). تابع حالة التنزيل من إشعارات الهاتف أو تطبيق التنزيلات."
                                     } catch (e: Exception) {
                                         status = "تعذر بدء التحميل: ${e.message ?: "خطأ غير معروف"}"
                                     }
