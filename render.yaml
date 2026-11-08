@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: oudi-downloader-api
+    runtime: node
+    rootDir: server
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    plan: free
