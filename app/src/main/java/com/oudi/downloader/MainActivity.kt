@@ -32,6 +32,20 @@ private val Black = Color(0xFF101010)
 private val Panel = Color(0xFF1B1B1B)
 private val Muted = Color(0xFFB9B2A1)
 
+private fun buildDownloadFileName(requestedName: String, guessedName: String): String {
+    val fallback = guessedName.substringAfterLast('/').substringAfterLast('\\\\').ifBlank { "download" }
+    val cleaned = requestedName.trim()
+        .substringAfterLast('/')
+        .substringAfterLast('\\\\')
+        .replace(Regex("[\\\\p{Cntrl}:*?\\\"<>|]"), "_")
+        .take(120)
+    if (cleaned.isBlank()) return fallback
+
+    val hasExtension = cleaned.substringAfterLast('.', "").isNotBlank() && !cleaned.endsWith('.')
+    val fallbackExtension = fallback.substringAfterLast('.', "").takeIf { it.isNotBlank() }
+    return if (hasExtension || fallbackExtension == null) cleaned else "$cleaned.$fallbackExtension"
+}
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -105,9 +119,10 @@ private fun OudiApp(context: Context) {
                                     status = "تم التعرف على رابط يوتيوب. لا يمكن تنزيل صفحة المشاهدة مباشرة؛ يمكنك فتح الفيديو عبر تطبيق يوتيوب الرسمي."
                                 } else {
                                     try {
-                                        val fileName = URLUtil.guessFileName(clean, null, null)
+                                        val guessedFileName = URLUtil.guessFileName(clean, null, null)
+                                        val fileName = buildDownloadFileName(title, guessedFileName)
                                         val request = DownloadManager.Request(Uri.parse(clean))
-                                            .setTitle(title.ifBlank { fileName })
+                                            .setTitle(fileName)
                                             .setDescription("OUDI Downloader")
                                             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                                             .setAllowedOverMetered(true)
