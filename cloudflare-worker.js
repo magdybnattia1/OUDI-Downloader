@@ -168,18 +168,47 @@ async function inspect(url) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 9000);
   try {
-    const response = await fetch(url.toString(), {
+    let response = await fetch(url.toString(), {
       method: "HEAD",
       redirect: "manual",
       signal: controller.signal,
       headers: { "user-agent": "OUDI-Downloader/1.0" }
     });
+    let usedRangeProbe = false;
+
+    // Some legitimate file hosts reject HEAD even though a normal download works.
+    // Retry only when the method itself is unsupported, using a one-byte range.
+    if (response.status === 405 || response.status === 501) {
+      try { await response.body?.cancel(); } catch { /* Ignore an already closed response body. */ }
+      usedRangeProbe = true;
+      response = await fetch(url.toString(), {
+        method: "GET",
+        redirect: "manual",
+        signal: controller.signal,
+        headers: {
+          "user-agent": "OUDI-Downloader/1.0",
+          "accept": "*/*",
+          "range": "bytes=0-0"
+        }
+      });
+    }
+
+    if (usedRangeProbe) {
+      // Do not download the media file during inspection if the host ignores Range.
+      try { await response.body?.cancel(); } catch { /* Headers are enough for inspection. */ }
+    }
     if (response.status >= 300 && response.status < 400) {
       return { ok: false, error: "الرابط يحوّل إلى عنوان آخر؛ استخدم رابط الملف النهائي المباشر" };
     }
-    if (!response.ok) return { ok: false, error: `المصدر ردّ بالحالة ${response.status}` };
+    if (!response.ok) return { ok: false, error: "المصدر ردّ بالحالة " + response.status };
     const type = (response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
-    const length = Number(response.headers.get("content-length") || 0);
+    const contentRange = response.headers.get("content-range") || "";
+    const rangeTotal = contentRange.match(/\/(\d+)\s*$/)?.[1];
+    const rawLength = Number(response.headers.get("content-length") || 0);
+    const length = Number(rangeTotal || rawLength || 0);
+    const size = rangeTotal
+      ? (Number.isFinite(length) && length > 0 ? length : null)
+      : (response.status === 206 ? null : (Number.isFinite(length) && length > 0 ? length : null));
     const disposition = response.headers.get("content-disposition") || "";
     const isMedia = type.startsWith("video/") || type.startsWith("audio/") ||
       type === "application/octet-stream" || type === "application/vnd.apple.mpegurl" ||
@@ -189,9 +218,9 @@ async function inspect(url) {
       ok: true,
       source: "direct",
       contentType: type,
-      size: Number.isFinite(length) && length > 0 ? length : null,
+      size,
       fileName: disposition.match(/filename\*?=(?:UTF-8''|")?([^";]+)/i)?.[1]?.replace(/"/g, "") || null,
-      formats: [{ id: "original", label: "الصيغة الأصلية", mimeType: type, size: length || null, url: url.toString() }]
+      formats: [{ id: "original", label: "الصيغة الأصلية", mimeType: type, size, url: url.toString() }]
     };
   } finally {
     clearTimeout(timeout);

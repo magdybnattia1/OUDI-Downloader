@@ -8,6 +8,7 @@ on:
       - "cloudflare-worker.js"
       - "wrangler.toml"
       - ".github/workflows/deploy-cloudflare.yml"
+      - "tests/**"
 
 permissions:
   contents: read
@@ -19,6 +20,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Test Worker inspection
+        run: node --test tests/cloudflare-worker.test.mjs
 
       - name: Deploy Worker
         uses: cloudflare/wrangler-action@v4.1.3
