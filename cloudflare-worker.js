@@ -164,13 +164,47 @@ async function inspectFacebookPage(pageUrl) {
   };
 }
 
+async function fetchFollowingSafeRedirects(startUrl, options, maxRedirects = 5) {
+  let current = validateMediaUrl(startUrl.toString());
+
+  for (let hop = 0; hop <= maxRedirects; hop++) {
+    const response = await fetch(current.toString(), {
+      ...options,
+      redirect: "manual"
+    });
+    if (![301, 302, 303, 307, 308].includes(response.status)) {
+      return { response, finalUrl: current };
+    }
+
+    const location = response.headers.get("location");
+    if (!location) {
+      try { await response.body?.cancel(); } catch { /* Ignore a closed redirect body. */ }
+      throw new Error("المصدر أعاد تحويلًا بدون عنوان وجهة");
+    }
+    if (hop === maxRedirects) {
+      try { await response.body?.cancel(); } catch { /* Ignore a closed redirect body. */ }
+      throw new Error("الرابط يحتوي على تحويلات أكثر من الحد المسموح");
+    }
+
+    const next = new URL(location, current);
+    if (current.protocol === "https:" && next.protocol !== "https:") {
+      try { await response.body?.cancel(); } catch { /* Ignore a closed redirect body. */ }
+      throw new Error("تم رفض تحويل غير آمن من HTTPS إلى HTTP");
+    }
+    const safeNext = validateMediaUrl(next.toString());
+    try { await response.body?.cancel(); } catch { /* Ignore a closed redirect body. */ }
+    current = safeNext;
+  }
+
+  throw new Error("تعذر تتبع تحويل الرابط");
+}
+
 async function inspect(url) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 9000);
   try {
-    let response = await fetch(url.toString(), {
+    let { response, finalUrl } = await fetchFollowingSafeRedirects(url, {
       method: "HEAD",
-      redirect: "manual",
       signal: controller.signal,
       headers: { "user-agent": "OUDI-Downloader/1.0" }
     });
@@ -181,9 +215,8 @@ async function inspect(url) {
     if (response.status === 405 || response.status === 501) {
       try { await response.body?.cancel(); } catch { /* Ignore an already closed response body. */ }
       usedRangeProbe = true;
-      response = await fetch(url.toString(), {
+      const probe = await fetchFollowingSafeRedirects(url, {
         method: "GET",
-        redirect: "manual",
         signal: controller.signal,
         headers: {
           "user-agent": "OUDI-Downloader/1.0",
@@ -191,19 +224,18 @@ async function inspect(url) {
           "range": "bytes=0-0"
         }
       });
+      response = probe.response;
+      finalUrl = probe.finalUrl;
     }
 
     if (usedRangeProbe) {
       // Do not download the media file during inspection if the host ignores Range.
       try { await response.body?.cancel(); } catch { /* Headers are enough for inspection. */ }
     }
-    if (response.status >= 300 && response.status < 400) {
-      return { ok: false, error: "الرابط يحوّل إلى عنوان آخر؛ استخدم رابط الملف النهائي المباشر" };
-    }
     if (!response.ok) return { ok: false, error: "المصدر ردّ بالحالة " + response.status };
     const type = (response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
     const contentRange = response.headers.get("content-range") || "";
-    const rangeTotal = contentRange.match(/\/(\d+)\s*$/)?.[1];
+    const rangeTotal = contentRange.match(/\\/(\\d+)\\s*$/)?.[1];
     const rawLength = Number(response.headers.get("content-length") || 0);
     const length = Number(rangeTotal || rawLength || 0);
     const size = rangeTotal
@@ -219,8 +251,8 @@ async function inspect(url) {
       source: "direct",
       contentType: type,
       size,
-      fileName: disposition.match(/filename\*?=(?:UTF-8''|")?([^";]+)/i)?.[1]?.replace(/"/g, "") || null,
-      formats: [{ id: "original", label: "الصيغة الأصلية", mimeType: type, size, url: url.toString() }]
+      fileName: disposition.match(/filename\\*?=(?:UTF-8''|")?([^";]+)/i)?.[1]?.replace(/"/g, "") || null,
+      formats: [{ id: "original", label: "الصيغة الأصلية", mimeType: type, size, url: finalUrl.toString() }]
     };
   } finally {
     clearTimeout(timeout);
