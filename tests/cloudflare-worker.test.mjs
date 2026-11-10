@@ -129,7 +129,7 @@ test("rejects redirects to localhost before making a second request", async () =
     calls.push({ url: String(url), method: options.method });
     return new Response(null, {
       status: 302,
-      headers: { location: "http://localhost/private.mp4" }
+      headers: { location: "https://localhost/private.mp4" }
     });
   };
 
