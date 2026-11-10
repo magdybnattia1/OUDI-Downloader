@@ -81,3 +81,92 @@ test("keeps HEAD metadata when the host supports HEAD", async () => {
     globalThis.fetch = originalFetch;
   }
 });
+
+
+test("follows safe public redirects and returns the final media URL", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url: String(url), method: options.method });
+    if (calls.length === 1) {
+      return new Response(null, {
+        status: 302,
+        headers: { location: "/assets/final.mp4" }
+      });
+    }
+    return new Response(null, {
+      status: 200,
+      headers: {
+        "content-type": "video/mp4",
+        "content-length": "4096"
+      }
+    });
+  };
+
+  try {
+    const response = await worker.fetch(inspectRequest("https://share.example/clip"));
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.ok, true);
+    assert.deepEqual(calls, [
+      { url: "https://share.example/clip", method: "HEAD" },
+      { url: "https://share.example/assets/final.mp4", method: "HEAD" }
+    ]);
+    assert.equal(body.formats[0].url, "https://share.example/assets/final.mp4");
+    assert.equal(body.size, 4096);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("rejects redirects to localhost before making a second request", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url: String(url), method: options.method });
+    return new Response(null, {
+      status: 302,
+      headers: { location: "http://localhost/private.mp4" }
+    });
+  };
+
+  try {
+    const response = await worker.fetch(inspectRequest("https://share.example/clip"));
+    const body = await response.json();
+
+    assert.equal(response.status, 400);
+    assert.match(body.error, /المضيف غير مسموح/);
+    assert.deepEqual(calls, [
+      { url: "https://share.example/clip", method: "HEAD" }
+    ]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("rejects HTTPS redirects that downgrade to HTTP", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url: String(url), method: options.method });
+    return new Response(null, {
+      status: 301,
+      headers: { location: "http://cdn.example/video.mp4" }
+    });
+  };
+
+  try {
+    const response = await worker.fetch(inspectRequest("https://share.example/clip"));
+    const body = await response.json();
+
+    assert.equal(response.status, 400);
+    assert.match(body.error, /تحويل غير آمن/);
+    assert.equal(calls.length, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
