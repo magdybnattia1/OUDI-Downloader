@@ -83,6 +83,46 @@ test("keeps HEAD metadata when the host supports HEAD", async () => {
 });
 
 
+test("prefers and decodes RFC 5987 UTF-8 filenames", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(null, {
+    status: 200,
+    headers: {
+      "content-type": "video/mp4",
+      "content-disposition": "attachment; filename=\"fallback.mp4\"; filename*=UTF-8''%D8%A7%D8%AE%D8%AA%D8%A8%D8%A7%D8%B1%20video.mp4"
+    }
+  });
+
+  try {
+    const response = await worker.fetch(inspectRequest("https://cdn.example/sample.mp4"));
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.fileName, "اختبار video.mp4");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("falls back to the quoted filename when the extended filename is malformed", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(null, {
+    status: 200,
+    headers: {
+      "content-type": "video/mp4",
+      "content-disposition": "attachment; filename=\"safe\\\"clip.mp4\"; filename*=UTF-8''bad%ZZ"
+    }
+  });
+
+  try {
+    const response = await worker.fetch(inspectRequest("https://cdn.example/sample.mp4"));
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.fileName, "safe\"clip.mp4");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("follows safe public redirects and returns the final media URL", async () => {
   const originalFetch = globalThis.fetch;
   const calls = [];

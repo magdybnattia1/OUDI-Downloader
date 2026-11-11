@@ -199,6 +199,27 @@ async function fetchFollowingSafeRedirects(startUrl, options, maxRedirects = 5) 
   throw new Error("تعذر تتبع تحويل الرابط");
 }
 
+function getContentDispositionFileName(disposition) {
+  const extendedMatch = disposition.match(/(?:^|;)\s*filename\*\s*=\s*(?:"((?:\\.|[^"])*)"|([^;]*))/i);
+  const extendedValue = (extendedMatch?.[1] ?? extendedMatch?.[2] ?? "")
+    .replace(/\\(.)/g, "$1").trim();
+  const encoded = extendedValue.match(/^([^']*)'[^']*'(.*)$/);
+  if (encoded && encoded[1].toLowerCase() === "utf-8") {
+    try {
+      const decoded = decodeURIComponent(encoded[2]);
+      if (decoded.trim()) return decoded;
+    } catch {
+      // Fall back to the legacy filename parameter if the extended value is malformed.
+    }
+  }
+
+  const plainMatch = disposition.match(/(?:^|;)\s*filename\s*=\s*(?:"((?:\\.|[^"])*)"|([^;]*))/i);
+  const plainValue = plainMatch?.[1] !== undefined
+    ? plainMatch[1].replace(/\\(.)/g, "$1")
+    : plainMatch?.[2]?.trim();
+  return plainValue || null;
+}
+
 async function inspect(url) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 9000);
@@ -251,7 +272,7 @@ async function inspect(url) {
       source: "direct",
       contentType: type,
       size,
-      fileName: disposition.match(/filename\*?=(?:UTF-8''|")?([^";]+)/i)?.[1]?.replace(/"/g, "") || null,
+    fileName: getContentDispositionFileName(disposition),
       formats: [{ id: "original", label: "الصيغة الأصلية", mimeType: type, size, url: finalUrl.toString() }]
     };
   } finally {
