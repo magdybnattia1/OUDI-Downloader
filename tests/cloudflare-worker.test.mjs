@@ -210,3 +210,49 @@ test("rejects HTTPS redirects that downgrade to HTTP", async () => {
     globalThis.fetch = originalFetch;
   }
 });
+
+test("keeps the Facebook request timeout active while reading the page body", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalSetTimeout = globalThis.setTimeout;
+  const originalClearTimeout = globalThis.clearTimeout;
+  let timeoutCallback;
+  let timerCleared = false;
+  const timerId = 12345;
+
+  globalThis.setTimeout = (callback, delay) => {
+    assert.equal(delay, 9000);
+    timeoutCallback = callback;
+    return timerId;
+  };
+  globalThis.clearTimeout = id => {
+    assert.equal(id, timerId);
+    timerCleared = true;
+  };
+  globalThis.fetch = async (_url, options = {}) => {
+    const body = new ReadableStream({
+      pull(controller) {
+        assert.equal(timerCleared, false, "timeout must remain active during body reads");
+        options.signal.addEventListener("abort", () => {
+          controller.error(new DOMException("The operation was aborted.", "AbortError"));
+        }, { once: true });
+        timeoutCallback();
+      }
+    }, { highWaterMark: 0 });
+    return new Response(body, {
+      status: 200,
+      headers: { "content-type": "text/html; charset=utf-8" }
+    });
+  };
+
+  try {
+    const response = await worker.fetch(inspectRequest("https://www.facebook.com/share/r/test"));
+    const body = await response.json();
+    assert.equal(response.status, 400);
+    assert.equal(body.error, "انتهت مهلة الاتصال بالمصدر");
+    assert.equal(timerCleared, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+    globalThis.setTimeout = originalSetTimeout;
+    globalThis.clearTimeout = originalClearTimeout;
+  }
+});

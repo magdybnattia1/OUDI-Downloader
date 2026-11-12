@@ -52,9 +52,8 @@ async function fetchFacebookPage(startUrl) {
     }
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 9000);
-    let response;
     try {
-      response = await fetch(current.toString(), {
+      const response = await fetch(current.toString(), {
         method: "GET",
         redirect: "manual",
         signal: controller.signal,
@@ -63,40 +62,41 @@ async function fetchFacebookPage(startUrl) {
           "accept": "text/html,application/xhtml+xml"
         }
       });
+      if ([301, 302, 303, 307, 308].includes(response.status)) {
+        const location = response.headers.get("location");
+        if (!location || hop === 5) throw new Error("تعذر تتبع تحويل رابط Facebook");
+        current = new URL(location, current);
+        continue;
+      }
+      if (!response.ok) throw new Error("Facebook ردّ بالحالة " + response.status);
+      const type = (response.headers.get("content-type") || "").toLowerCase();
+      if (!type.includes("text/html")) throw new Error("Facebook لم يُرجع صفحة فيديو عامة");
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("تعذر قراءة صفحة Facebook");
+      const chunks = [];
+      let total = 0;
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          total += value.byteLength;
+          if (total > 1500000) {
+            await reader.cancel();
+            throw new Error("صفحة Facebook أكبر من الحد المسموح للفحص");
+          }
+          chunks.push(value);
+        }
+      } finally {
+        reader.releaseLock();
+      }
+      const bytes = new Uint8Array(total);
+      let offset = 0;
+      for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+      return new TextDecoder().decode(bytes);
     } finally {
+      // Keep the timeout active while the response body is being streamed.
       clearTimeout(timeout);
     }
-    if ([301, 302, 303, 307, 308].includes(response.status)) {
-      const location = response.headers.get("location");
-      if (!location || hop === 5) throw new Error("تعذر تتبع تحويل رابط Facebook");
-      current = new URL(location, current);
-      continue;
-    }
-    if (!response.ok) throw new Error(`Facebook ردّ بالحالة ${response.status}`);
-    const type = (response.headers.get("content-type") || "").toLowerCase();
-    if (!type.includes("text/html")) throw new Error("Facebook لم يُرجع صفحة فيديو عامة");
-    const reader = response.body?.getReader();
-    if (!reader) throw new Error("تعذر قراءة صفحة Facebook");
-    const chunks = [];
-    let total = 0;
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        total += value.byteLength;
-        if (total > 1500000) {
-          await reader.cancel();
-          throw new Error("صفحة Facebook أكبر من الحد المسموح للفحص");
-        }
-        chunks.push(value);
-      }
-    } finally {
-      reader.releaseLock();
-    }
-    const bytes = new Uint8Array(total);
-    let offset = 0;
-    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
-    return new TextDecoder().decode(bytes);
   }
   throw new Error("تعذر الوصول إلى صفحة Facebook");
 }
