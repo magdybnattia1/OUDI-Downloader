@@ -256,3 +256,37 @@ test("keeps the Facebook request timeout active while reading the page body", as
     globalThis.clearTimeout = originalClearTimeout;
   }
 });
+
+for (const contentType of [
+  "application/vnd.apple.mpegurl",
+  "application/x-mpegurl",
+  "application/mpegurl",
+  "audio/mpegurl",
+  "audio/x-mpegurl"
+]) {
+  test(`does not report an HLS playlist as a downloadable video file (${contentType})`, async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (_url, options = {}) => {
+      assert.equal(options.method, "HEAD");
+      return new Response(null, {
+        status: 200,
+        headers: {
+          "content-type": contentType,
+          "content-length": "256"
+        }
+      });
+    };
+
+    try {
+      const response = await worker.fetch(inspectRequest("https://cdn.example/stream"));
+      const body = await response.json();
+      assert.equal(response.status, 422);
+      assert.equal(body.ok, false);
+      assert.match(body.error, /قائمة تشغيل HLS/);
+      assert.equal(body.contentType, contentType);
+      assert.equal(body.formats, undefined);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+}

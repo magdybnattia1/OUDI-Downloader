@@ -263,9 +263,22 @@ async function inspect(url) {
       ? (Number.isFinite(length) && length > 0 ? length : null)
       : (response.status === 206 ? null : (Number.isFinite(length) && length > 0 ? length : null));
     const disposition = response.headers.get("content-disposition") || "";
+    const isHlsPlaylist = [
+      "application/vnd.apple.mpegurl",
+      "application/x-mpegurl",
+      "application/mpegurl",
+      "audio/mpegurl",
+      "audio/x-mpegurl"
+    ].includes(type);
+    if (isHlsPlaylist) {
+      return {
+        ok: false,
+        error: "الرابط يشير إلى قائمة تشغيل HLS وليس ملف فيديو مباشرًا؛ حفظ القائمة وحدها لا ينزّل الفيديو.",
+        contentType: type
+      };
+    }
     const isMedia = type.startsWith("video/") || type.startsWith("audio/") ||
-      type === "application/octet-stream" || type === "application/vnd.apple.mpegurl" ||
-      type === "application/x-mpegurl";
+      type === "application/octet-stream";
     if (!isMedia) return { ok: false, error: "الرابط لا يشير إلى ملف وسائط مباشر", contentType: type || "unknown" };
     return {
       ok: true,
