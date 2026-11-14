@@ -9,7 +9,12 @@ import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.webkit.URLUtil
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -81,6 +86,21 @@ private fun OudiApp(context: Context) {
     var inspectedFileName by remember { mutableStateOf("") }
     var isInspecting by remember { mutableStateOf(false) }
     var formatMenuExpanded by remember { mutableStateOf(false) }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (!granted) {
+            status = "إذن الإشعارات مرفوض. التنزيل قد يستمر، لكن إشعار التقدم لن يظهر. فعّل إشعارات OUDI من إعدادات الهاتف."
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
 
     MaterialTheme(colorScheme = darkColorScheme(
         primary = Gold, onPrimary = Black, background = Black, surface = Panel,
