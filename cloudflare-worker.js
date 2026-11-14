@@ -277,15 +277,26 @@ async function inspect(url) {
         contentType: type
       };
     }
+    const fileName = getContentDispositionFileName(disposition);
+    const mediaFileExtension = /\.(?:3gp|aac|avi|flac|m4a|m4v|mkv|mov|mp3|mp4|mpeg|mpg|oga|ogg|opus|ts|wav|webm|wmv)$/i;
+    let decodedPath = finalUrl.pathname;
+    try { decodedPath = decodeURIComponent(decodedPath); } catch { /* Keep the encoded path for extension checks. */ }
+    const hasKnownMediaExtension = mediaFileExtension.test(decodedPath) ||
+      (typeof fileName === "string" && mediaFileExtension.test(fileName.trim()));
     const isMedia = type.startsWith("video/") || type.startsWith("audio/") ||
-      type === "application/octet-stream";
-    if (!isMedia) return { ok: false, error: "الرابط لا يشير إلى ملف وسائط مباشر", contentType: type || "unknown" };
+      (type === "application/octet-stream" && hasKnownMediaExtension);
+    if (!isMedia) {
+      const error = type === "application/octet-stream"
+        ? "المصدر أعلن نوع ملف عام ولم يقدّم امتدادًا معروفًا لملف صوت أو فيديو؛ تم رفضه لتجنب تنزيل ملف غير وسائطي."
+        : "الرابط لا يشير إلى ملف وسائط مباشر";
+      return { ok: false, error, contentType: type || "unknown" };
+    }
     return {
       ok: true,
       source: "direct",
       contentType: type,
       size,
-    fileName: getContentDispositionFileName(disposition),
+    fileName,
       formats: [{ id: "original", label: "الصيغة الأصلية", mimeType: type, size, url: finalUrl.toString() }]
     };
   } finally {

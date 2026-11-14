@@ -290,3 +290,71 @@ for (const contentType of [
     }
   });
 }
+
+
+test("rejects generic binary responses without a known audio or video filename", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(null, {
+    status: 200,
+    headers: {
+      "content-type": "application/octet-stream",
+      "content-length": "2048"
+    }
+  });
+
+  try {
+    const response = await worker.fetch(inspectRequest("https://cdn.example/download?id=42"));
+    const body = await response.json();
+    assert.equal(response.status, 422);
+    assert.equal(body.ok, false);
+    assert.match(body.error, /نوع ملف عام/);
+    assert.equal(body.formats, undefined);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("accepts a generic binary response when the URL has a known media extension", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(null, {
+    status: 200,
+    headers: {
+      "content-type": "application/octet-stream",
+      "content-length": "8192"
+    }
+  });
+
+  try {
+    const response = await worker.fetch(inspectRequest("https://cdn.example/video.mp4"));
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.ok, true);
+    assert.equal(body.formats[0].mimeType, "application/octet-stream");
+    assert.equal(body.formats[0].url, "https://cdn.example/video.mp4");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("accepts a generic binary response when Content-Disposition names a media file", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(null, {
+    status: 200,
+    headers: {
+      "content-type": "application/octet-stream",
+      "content-disposition": 'attachment; filename="audio.mp3"',
+      "content-length": "4096"
+    }
+  });
+
+  try {
+    const response = await worker.fetch(inspectRequest("https://cdn.example/download?id=audio"));
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.ok, true);
+    assert.equal(body.fileName, "audio.mp3");
+    assert.equal(body.formats[0].mimeType, "application/octet-stream");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
