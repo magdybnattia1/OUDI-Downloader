@@ -298,7 +298,51 @@ private fun OudiApp(context: Context) {
                                                     .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
                                                 val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
                                                 val downloadId = manager.enqueue(request)
-                                                status = "بدأ تنزيل ${format.label} إلى مجلد Downloads (رقم الطلب: $downloadId)."
+                                                status = "تمت إضافة الطلب إلى مدير Android. جاري التحقق من حالة التنزيل..."
+                                                val handler = Handler(Looper.getMainLooper())
+                                                val query = DownloadManager.Query().setFilterById(downloadId)
+                                                val monitor = object : Runnable {
+                                                    override fun run() {
+                                                        val cursor = manager.query(query)
+                                                        if (cursor == null) {
+                                                            status = "تعذر قراءة حالة التنزيل رقم $downloadId"
+                                                            return
+                                                        }
+                                                        cursor.use {
+                                                            if (!it.moveToFirst()) {
+                                                                status = "لم يعد طلب التنزيل رقم $downloadId موجودًا"
+                                                                return
+                                                            }
+                                                            val downloadStatus = it.getInt(it.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
+                                                            val downloaded = it.getLong(it.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR))
+                                                            val total = it.getLong(it.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES))
+                                                            when (downloadStatus) {
+                                                                DownloadManager.STATUS_PENDING -> status = "التنزيل رقم $downloadId في انتظار البدء..."
+                                                                DownloadManager.STATUS_RUNNING -> {
+                                                                    status = if (total > 0L) {
+                                                                        val percent = (downloaded * 100L / total).coerceIn(0L, 100L)
+                                                                        "جاري تنزيل ${format.label}: $percent% (${downloaded / 1024} من ${total / 1024} كيلوبايت)"
+                                                                    } else {
+                                                                        "جاري تنزيل ${format.label}: تم استلام ${downloaded / 1024} كيلوبايت"
+                                                                    }
+                                                                }
+                                                                DownloadManager.STATUS_PAUSED -> {
+                                                                    val reason = it.getInt(it.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON))
+                                                                    status = "التنزيل متوقف مؤقتًا (السبب: $reason). تحقق من الاتصال أو إعدادات الشبكة."
+                                                                }
+                                                                DownloadManager.STATUS_SUCCESSFUL -> status = "اكتمل تنزيل ${format.label} بنجاح في مجلد Downloads."
+                                                                DownloadManager.STATUS_FAILED -> {
+                                                                    val reason = it.getInt(it.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON))
+                                                                    status = "فشل التنزيل (رمز الخطأ: $reason). قد يكون الرابط منتهي الصلاحية أو يتطلب صلاحية وصول."
+                                                                }
+                                                            }
+                                                            if (downloadStatus == DownloadManager.STATUS_PENDING || downloadStatus == DownloadManager.STATUS_RUNNING || downloadStatus == DownloadManager.STATUS_PAUSED) {
+                                                                handler.postDelayed(this, 1000L)
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                handler.post(monitor)
                                             }
                                         } catch (e: Exception) {
                                             status = "تعذر بدء التنزيل: ${e.message ?: "خطأ غير معروف"}"
