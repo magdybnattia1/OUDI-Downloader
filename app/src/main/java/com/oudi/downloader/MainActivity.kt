@@ -49,7 +49,8 @@ private data class DownloadFormat(
     val id: String,
     val label: String,
     val mimeType: String,
-    val url: String
+    val url: String,
+    val sourcePageUrl: String
 )
 
 private fun buildDownloadFileName(requestedName: String, guessedName: String): String {
@@ -213,7 +214,8 @@ private fun OudiApp(context: Context) {
                                                                         label = item.optString("label").takeIf { it.isNotBlank() && it != "null" }
                                                                             ?: "خيار ${index + 1}",
                                                                         mimeType = item.optString("mimeType").takeIf { it.isNotBlank() && it != "null" }.orEmpty(),
-                                                                        url = itemUrl
+                                                                        url = itemUrl,
+                                                                        sourcePageUrl = clean
                                                                     )
                                                                 )
                                                             }
@@ -316,6 +318,18 @@ private fun OudiApp(context: Context) {
                                                     .setAllowedOverMetered(true)
                                                     .setAllowedOverRoaming(false)
                                                     .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
+                                                if (format.mimeType.isNotBlank()) {
+                                                    request.setMimeType(format.mimeType)
+                                                }
+                                                request.addRequestHeader("User-Agent", "OUDI-Downloader/0.1 (Android)")
+                                                request.addRequestHeader("Accept", "*/*")
+                                                val sourceHost = runCatching { Uri.parse(format.sourcePageUrl).host?.lowercase() }.getOrNull().orEmpty()
+                                                val mediaHost = mediaUri.host?.lowercase().orEmpty()
+                                                val isFacebookSource = sourceHost == "facebook.com" || sourceHost.endsWith(".facebook.com")
+                                                val isFacebookCdn = mediaHost == "fbcdn.net" || mediaHost.endsWith(".fbcdn.net")
+                                                if (isFacebookSource && isFacebookCdn && format.sourcePageUrl.startsWith("https://")) {
+                                                    request.addRequestHeader("Referer", format.sourcePageUrl)
+                                                }
                                                 val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
                                                 val downloadId = manager.enqueue(request)
                                                 status = "تمت إضافة الطلب إلى مدير Android. جاري التحقق من حالة التنزيل..."
