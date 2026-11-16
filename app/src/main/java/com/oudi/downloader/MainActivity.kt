@@ -87,6 +87,11 @@ private fun OudiApp(context: Context) {
     var inspectedFileName by remember { mutableStateOf("") }
     var isInspecting by remember { mutableStateOf(false) }
     var formatMenuExpanded by remember { mutableStateOf(false) }
+    val appVersion = remember {
+        runCatching {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName
+        }.getOrNull() ?: "غير معروف"
+    }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -431,7 +436,7 @@ private fun OudiApp(context: Context) {
                     }
                 }
                 Spacer(Modifier.height(24.dp))
-                Text("الإصدار التأسيسي 0.1.0 • OUDI", color = Color.Gray, fontSize = 11.sp, modifier = Modifier.align(Alignment.CenterHorizontally))
+                Text("الإصدار $appVersion • OUDI", color = Color.Gray, fontSize = 11.sp, modifier = Modifier.align(Alignment.CenterHorizontally))
             }
         }
     }
