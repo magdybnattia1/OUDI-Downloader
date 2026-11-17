@@ -167,18 +167,29 @@ test("follows safe public redirects and returns the final media URL", async () =
   const calls = [];
 
   globalThis.fetch = async (url, options = {}) => {
-    calls.push({ url: String(url), method: options.method });
-    if (calls.length === 1) {
+    const currentUrl = String(url);
+    calls.push({ url: currentUrl, method: options.method });
+    if (currentUrl === "https://share.example/clip") {
       return new Response(null, {
         status: 302,
         headers: { location: "/assets/final.mp4" }
       });
     }
-    return new Response(null, {
-      status: 200,
+    if (options.method === "HEAD") {
+      return new Response(null, {
+        status: 200,
+        headers: {
+          "content-type": "video/mp4",
+          "content-length": "4096"
+        }
+      });
+    }
+    return new Response("x", {
+      status: 206,
       headers: {
         "content-type": "video/mp4",
-        "content-length": "4096"
+        "content-range": "bytes 0-0/4096",
+        "content-length": "1"
       }
     });
   };
@@ -191,7 +202,9 @@ test("follows safe public redirects and returns the final media URL", async () =
     assert.equal(body.ok, true);
     assert.deepEqual(calls, [
       { url: "https://share.example/clip", method: "HEAD" },
-      { url: "https://share.example/assets/final.mp4", method: "HEAD" }
+      { url: "https://share.example/assets/final.mp4", method: "HEAD" },
+      { url: "https://share.example/clip", method: "GET" },
+      { url: "https://share.example/assets/final.mp4", method: "GET" }
     ]);
     assert.equal(body.formats[0].url, "https://share.example/assets/final.mp4");
     assert.equal(body.size, 4096);
@@ -306,12 +319,21 @@ for (const contentType of [
   test(`does not report an HLS playlist as a downloadable video file (${contentType})`, async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = async (_url, options = {}) => {
-      assert.equal(options.method, "HEAD");
-      return new Response(null, {
-        status: 200,
+      if (options.method === "HEAD") {
+        return new Response(null, {
+          status: 200,
+          headers: {
+            "content-type": contentType,
+            "content-length": "256"
+          }
+        });
+      }
+      return new Response("x", {
+        status: 206,
         headers: {
           "content-type": contentType,
-          "content-length": "256"
+          "content-range": "bytes 0-0/256",
+          "content-length": "1"
         }
       });
     };
