@@ -229,13 +229,14 @@ async function inspect(url) {
       signal: controller.signal,
       headers: { "user-agent": "OUDI-Downloader/1.0" }
     });
-    let usedRangeProbe = false;
 
-    // Some legitimate file hosts reject HEAD even though a normal download works.
-    // Retry only when the method itself is unsupported, using a one-byte range.
+    // HEAD metadata alone is not enough: Android later downloads with GET.
+    // Probe the actual download method with one byte so a HEAD-only endpoint
+    // is not presented as a working download. Cancel the body immediately.
     if (response.status === 405 || response.status === 501) {
       try { await response.body?.cancel(); } catch { /* Ignore an already closed response body. */ }
-      usedRangeProbe = true;
+    }
+    if (response.ok || response.status === 405 || response.status === 501) {
       const probe = await fetchFollowingSafeRedirects(url, {
         method: "GET",
         signal: controller.signal,
@@ -247,10 +248,7 @@ async function inspect(url) {
       });
       response = probe.response;
       finalUrl = probe.finalUrl;
-    }
-
-    if (usedRangeProbe) {
-      // Do not download the media file during inspection if the host ignores Range.
+      // Some hosts ignore Range and start a normal response; never read its body here.
       try { await response.body?.cancel(); } catch { /* Headers are enough for inspection. */ }
     }
     if (!response.ok) return { ok: false, error: "المصدر ردّ بالحالة " + response.status };

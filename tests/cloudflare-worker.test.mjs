@@ -53,17 +53,25 @@ test("falls back to a one-byte GET range when a direct host rejects HEAD", async
   }
 });
 
-test("keeps HEAD metadata when the host supports HEAD", async () => {
+test("verifies GET access with a one-byte range even when HEAD succeeds", async () => {
   const originalFetch = globalThis.fetch;
   const calls = [];
 
   globalThis.fetch = async (_url, options = {}) => {
-    calls.push(options.method);
-    return new Response(null, {
-      status: 200,
+    const headers = new Headers(options.headers);
+    calls.push({ method: options.method, range: headers.get("range") });
+    if (options.method === "HEAD") {
+      return new Response(null, {
+        status: 200,
+        headers: { "content-type": "video/webm", "content-length": "9876" }
+      });
+    }
+    return new Response("x", {
+      status: 206,
       headers: {
         "content-type": "video/webm",
-        "content-length": "9876"
+        "content-range": "bytes 0-0/9876",
+        "content-length": "1"
       }
     });
   };
@@ -74,9 +82,40 @@ test("keeps HEAD metadata when the host supports HEAD", async () => {
 
     assert.equal(response.status, 200);
     assert.equal(body.ok, true);
-    assert.deepEqual(calls, ["HEAD"]);
+    assert.deepEqual(calls, [
+      { method: "HEAD", range: null },
+      { method: "GET", range: "bytes=0-0" }
+    ]);
     assert.equal(body.size, 9876);
     assert.equal(body.formats[0].mimeType, "video/webm");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("rejects a HEAD-accessible file when the actual GET request is forbidden", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+
+  globalThis.fetch = async (_url, options = {}) => {
+    calls.push(options.method);
+    if (options.method === "HEAD") {
+      return new Response(null, {
+        status: 200,
+        headers: { "content-type": "video/mp4", "content-length": "1000" }
+      });
+    }
+    return new Response(null, { status: 403 });
+  };
+
+  try {
+    const response = await worker.fetch(inspectRequest("https://cdn.example/restricted.mp4"));
+    const body = await response.json();
+
+    assert.equal(response.status, 422);
+    assert.equal(body.ok, false);
+    assert.match(body.error, /403/);
+    assert.deepEqual(calls, ["HEAD", "GET"]);
   } finally {
     globalThis.fetch = originalFetch;
   }
