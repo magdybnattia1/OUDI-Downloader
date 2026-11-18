@@ -255,7 +255,7 @@ async function inspect(url) {
     if (!response.ok) return { ok: false, error: "المصدر ردّ بالحالة " + response.status };
     const type = (response.headers.get("content-type") || headResponse.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
     const contentRange = response.headers.get("content-range") || "";
-    const rangeTotal = contentRange.match(/\\/(\\d+)\\s*$/)?.[1];
+    const rangeTotal = contentRange.match(/\/(\d+)\s*$/)?.[1];
     const rawLength = Number(response.headers.get("content-length") || headResponse.headers.get("content-length") || 0);
     const length = Number(rangeTotal || rawLength || 0);
     const size = rangeTotal
