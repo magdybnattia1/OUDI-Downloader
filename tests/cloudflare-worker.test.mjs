@@ -53,6 +53,37 @@ test("falls back to a one-byte GET range when a direct host rejects HEAD", async
   }
 });
 
+test("uses a successful ranged GET when the host forbids HEAD", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+
+  globalThis.fetch = async (_url, options = {}) => {
+    calls.push(options.method);
+    if (options.method === "HEAD") return new Response(null, { status: 403 });
+    return new Response("x", {
+      status: 206,
+      headers: {
+        "content-type": "video/mp4",
+        "content-range": "bytes 0-0/54321",
+        "content-length": "1"
+      }
+    });
+  };
+
+  try {
+    const response = await worker.fetch(inspectRequest("https://cdn.example/head-blocked.mp4"));
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.ok, true);
+    assert.deepEqual(calls, ["HEAD", "GET"]);
+    assert.equal(body.size, 54321);
+    assert.equal(body.formats[0].mimeType, "video/mp4");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("verifies GET access with a one-byte range even when HEAD succeeds", async () => {
   const originalFetch = globalThis.fetch;
   const calls = [];
