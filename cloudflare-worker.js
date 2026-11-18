@@ -224,43 +224,44 @@ async function inspect(url) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 9000);
   try {
-    let { response, finalUrl } = await fetchFollowingSafeRedirects(url, {
+    // HEAD is useful metadata, but some legitimate hosts deny HEAD while
+    // allowing the actual GET download. Keep it advisory and verify GET every time.
+    const head = await fetchFollowingSafeRedirects(url, {
       method: "HEAD",
       signal: controller.signal,
       headers: { "user-agent": "OUDI-Downloader/1.0" }
     });
+    const headResponse = head.response;
+    try { await headResponse.body?.cancel(); } catch { /* Ignore an already closed response body. */ }
 
-    // HEAD metadata alone is not enough: Android later downloads with GET.
-    // Probe the actual download method with one byte so a HEAD-only endpoint
-    // is not presented as a working download. Cancel the body immediately.
-    if (response.status === 405 || response.status === 501) {
-      try { await response.body?.cancel(); } catch { /* Ignore an already closed response body. */ }
-    }
-    if (response.ok || response.status === 405 || response.status === 501) {
-      const probe = await fetchFollowingSafeRedirects(url, {
-        method: "GET",
-        signal: controller.signal,
-        headers: {
-          "user-agent": "OUDI-Downloader/1.0",
-          "accept": "*/*",
-          "range": "bytes=0-0"
-        }
-      });
-      response = probe.response;
-      finalUrl = probe.finalUrl;
-      // Some hosts ignore Range and start a normal response; never read its body here.
-      try { await response.body?.cancel(); } catch { /* Headers are enough for inspection. */ }
-    }
+    // Verify the same HTTP method Android will use, without reading the file.
+    // Request one byte and cancel the response body immediately.
+    const probe = await fetchFollowingSafeRedirects(url, {
+      method: "GET",
+      signal: controller.signal,
+      headers: {
+        "user-agent": "OUDI-Downloader/1.0",
+        "accept": "*/*",
+        "range": "bytes=0-0"
+      }
+    });
+    const response = probe.response;
+    const finalUrl = probe.finalUrl;
+    // Some hosts ignore Range and start a normal response; never read its body here.
+    try { await response.body?.cancel(); } catch { /* Ignore an already closed response body. */ }
+
+    // GET is authoritative: a failed HEAD must not hide a working GET, and a
+    // successful HEAD must never make a forbidden GET look downloadable.
     if (!response.ok) return { ok: false, error: "المصدر ردّ بالحالة " + response.status };
-    const type = (response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+    const type = (response.headers.get("content-type") || headResponse.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
     const contentRange = response.headers.get("content-range") || "";
-    const rangeTotal = contentRange.match(/\/(\d+)\s*$/)?.[1];
-    const rawLength = Number(response.headers.get("content-length") || 0);
+    const rangeTotal = contentRange.match(/\\/(\\d+)\\s*$/)?.[1];
+    const rawLength = Number(response.headers.get("content-length") || headResponse.headers.get("content-length") || 0);
     const length = Number(rangeTotal || rawLength || 0);
     const size = rangeTotal
       ? (Number.isFinite(length) && length > 0 ? length : null)
       : (response.status === 206 ? null : (Number.isFinite(length) && length > 0 ? length : null));
-    const disposition = response.headers.get("content-disposition") || "";
+    const disposition = response.headers.get("content-disposition") || headResponse.headers.get("content-disposition") || "";
     const isHlsPlaylist = [
       "application/vnd.apple.mpegurl",
       "application/x-mpegurl",
