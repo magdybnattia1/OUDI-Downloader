@@ -224,44 +224,25 @@ async function inspect(url) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 9000);
   try {
-    // HEAD is useful metadata, but some legitimate hosts deny HEAD while
-    // allowing the actual GET download. Keep it advisory and verify GET every time.
-    const head = await fetchFollowingSafeRedirects(url, {
-      method: "HEAD",
-      signal: controller.signal,
-      headers: { "user-agent": "OUDI-Downloader/1.0" }
-    });
-    const headResponse = head.response;
-    try { await headResponse.body?.cancel(); } catch { /* Ignore an already closed response body. */ }
-
-    // Verify the same HTTP method Android will use, without reading the file.
-    // Request one byte and cancel the response body immediately.
+    // Probe the same un-ranged GET that Android DownloadManager will issue.
+    // Cancel the body as soon as headers arrive; never read or proxy the media.
     const probe = await fetchFollowingSafeRedirects(url, {
       method: "GET",
       signal: controller.signal,
       headers: {
         "user-agent": "OUDI-Downloader/1.0",
-        "accept": "*/*",
-        "range": "bytes=0-0"
+        "accept": "*/*"
       }
     });
     const response = probe.response;
     const finalUrl = probe.finalUrl;
-    // Some hosts ignore Range and start a normal response; never read its body here.
     try { await response.body?.cancel(); } catch { /* Ignore an already closed response body. */ }
 
-    // GET is authoritative: a failed HEAD must not hide a working GET, and a
-    // successful HEAD must never make a forbidden GET look downloadable.
     if (!response.ok) return { ok: false, error: "المصدر ردّ بالحالة " + response.status };
-    const type = (response.headers.get("content-type") || headResponse.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
-    const contentRange = response.headers.get("content-range") || "";
-    const rangeTotal = contentRange.match(/\/(\d+)\s*$/)?.[1];
-    const rawLength = Number(response.headers.get("content-length") || headResponse.headers.get("content-length") || 0);
-    const length = Number(rangeTotal || rawLength || 0);
-    const size = rangeTotal
-      ? (Number.isFinite(length) && length > 0 ? length : null)
-      : (response.status === 206 ? null : (Number.isFinite(length) && length > 0 ? length : null));
-    const disposition = response.headers.get("content-disposition") || headResponse.headers.get("content-disposition") || "";
+    const type = (response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+    const rawLength = Number(response.headers.get("content-length") || 0);
+    const size = Number.isFinite(rawLength) && rawLength > 0 ? rawLength : null;
+    const disposition = response.headers.get("content-disposition") || "";
     const isHlsPlaylist = [
       "application/vnd.apple.mpegurl",
       "application/x-mpegurl",
@@ -277,7 +258,7 @@ async function inspect(url) {
       };
     }
     const fileName = getContentDispositionFileName(disposition);
-    const mediaFileExtension = /\.(?:3gp|aac|avi|flac|m4a|m4v|mkv|mov|mp3|mp4|mpeg|mpg|oga|ogg|opus|ts|wav|webm|wmv)$/i;
+    const mediaFileExtension = /\\.(?:3gp|aac|avi|flac|m4a|m4v|mkv|mov|mp3|mp4|mpeg|mpg|oga|ogg|opus|ts|wav|webm|wmv)$/i;
     let decodedPath = finalUrl.pathname;
     try { decodedPath = decodeURIComponent(decodedPath); } catch { /* Keep the encoded path for extension checks. */ }
     const hasKnownMediaExtension = mediaFileExtension.test(decodedPath) ||
@@ -295,7 +276,7 @@ async function inspect(url) {
       source: "direct",
       contentType: type,
       size,
-    fileName,
+      fileName,
       formats: [{ id: "original", label: "الصيغة الأصلية", mimeType: type, size, url: finalUrl.toString() }]
     };
   } finally {
