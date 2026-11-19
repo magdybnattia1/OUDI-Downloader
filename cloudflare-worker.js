@@ -258,7 +258,7 @@ async function inspect(url) {
       };
     }
     const fileName = getContentDispositionFileName(disposition);
-    const mediaFileExtension = /\\.(?:3gp|aac|avi|flac|m4a|m4v|mkv|mov|mp3|mp4|mpeg|mpg|oga|ogg|opus|ts|wav|webm|wmv)$/i;
+    const mediaFileExtension = /\.(?:3gp|aac|avi|flac|m4a|m4v|mkv|mov|mp3|mp4|mpeg|mpg|oga|ogg|opus|ts|wav|webm|wmv)$/i;
     let decodedPath = finalUrl.pathname;
     try { decodedPath = decodeURIComponent(decodedPath); } catch { /* Keep the encoded path for extension checks. */ }
     const hasKnownMediaExtension = mediaFileExtension.test(decodedPath) ||
