@@ -1,6 +1,7 @@
 package com.oudi.downloader
 
 import android.app.DownloadManager
+import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -12,6 +13,7 @@ import android.webkit.URLUtil
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -92,15 +94,28 @@ private fun OudiApp(context: Context) {
             context.packageManager.getPackageInfo(context.packageName, 0).versionName
         }.getOrNull() ?: "غير معروف"
     }
+    val notificationManager = remember {
+        context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    }
+    var notificationsEnabled by remember {
+        mutableStateOf(notificationManager.areNotificationsEnabled())
+    }
+    val notificationSettingsLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) {
+        notificationsEnabled = notificationManager.areNotificationsEnabled()
+    }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { granted ->
-        if (!granted) {
-            status = "إذن الإشعارات مرفوض. التنزيل قد يستمر، لكن إشعار التقدم لن يظهر. فعّل إشعارات OUDI من إعدادات الهاتف."
+        notificationsEnabled = granted && notificationManager.areNotificationsEnabled()
+        if (!notificationsEnabled) {
+            status = "إشعارات التنزيل متوقفة. فعّل إشعارات OUDI من إعدادات الهاتف حتى تظهر حالة التنزيل في لوحة الإشعارات."
         }
     }
 
     LaunchedEffect(Unit) {
+        notificationsEnabled = notificationManager.areNotificationsEnabled()
         if (Build.VERSION.SDK_INT >= 33 &&
             context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) {
@@ -423,6 +438,33 @@ private fun OudiApp(context: Context) {
                                 Icon(Icons.Default.PlayArrow, null)
                                 Spacer(Modifier.width(8.dp))
                                 Text("افتح الفيديو على يوتيوب")
+                            }
+                        }
+                    }
+                }
+                if (!notificationsEnabled) {
+                    Spacer(Modifier.height(12.dp))
+                    Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(16.dp)) {
+                        Column(Modifier.padding(14.dp)) {
+                            Text("إشعارات التنزيل متوقفة", color = Gold, fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "قد يستمر التنزيل، لكن لن يظهر في لوحة الإشعارات حتى تسمح بإشعارات OUDI.",
+                                color = Muted,
+                                fontSize = 12.sp
+                            )
+                            Spacer(Modifier.height(10.dp))
+                            OutlinedButton(
+                                onClick = {
+                                    val settingsIntent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                                        putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                                    }
+                                    notificationSettingsLauncher.launch(settingsIntent)
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Gold)
+                            ) {
+                                Text("فتح إعدادات الإشعارات")
                             }
                         }
                     }
