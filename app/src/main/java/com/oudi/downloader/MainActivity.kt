@@ -341,7 +341,6 @@ private fun OudiApp(context: Context) {
                                                 if (format.mimeType.isNotBlank()) {
                                                     request.setMimeType(format.mimeType)
                                                 }
-                                                request.addRequestHeader("User-Agent", "OUDI-Downloader/0.1 (Android)")
                                                 request.addRequestHeader("Accept", "*/*")
                                                 val sourceHost = runCatching { Uri.parse(format.sourcePageUrl).host?.lowercase() }.getOrNull().orEmpty()
                                                 val mediaHost = mediaUri.host?.lowercase().orEmpty()
