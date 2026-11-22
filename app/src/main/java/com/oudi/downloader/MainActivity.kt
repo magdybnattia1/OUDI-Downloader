@@ -72,6 +72,40 @@ private fun buildDownloadFileName(requestedName: String, guessedName: String): S
     return if (hasExtension || fallbackExtension == null) cleaned else "$cleaned.$fallbackExtension"
 }
 
+private fun describeDownloadPause(reason: Int): String = when (reason) {
+    DownloadManager.PAUSED_WAITING_TO_RETRY ->
+        "الاتصال انقطع مؤقتًا؛ سيحاول Android استكمال التنزيل تلقائيًا."
+    DownloadManager.PAUSED_WAITING_FOR_NETWORK ->
+        "التنزيل ينتظر اتصالًا بالإنترنت."
+    DownloadManager.PAUSED_QUEUED_FOR_WIFI ->
+        "التنزيل ينتظر الاتصال بشبكة Wi-Fi."
+    DownloadManager.PAUSED_UNKNOWN ->
+        "التنزيل متوقف مؤقتًا لسبب غير معروف."
+    else -> "التنزيل متوقف مؤقتًا (رمز السبب: $reason)."
+}
+
+private fun describeDownloadFailure(reason: Int): String = when (reason) {
+    DownloadManager.ERROR_UNHANDLED_HTTP_CODE ->
+        "رفض الخادم طلب التنزيل أو أعاد استجابة HTTP غير مقبولة. قد يكون الرابط منتهي الصلاحية أو يتطلب صلاحية وصول."
+    DownloadManager.ERROR_HTTP_DATA_ERROR ->
+        "حدث خطأ أثناء استقبال بيانات الملف من الخادم."
+    DownloadManager.ERROR_TOO_MANY_REDIRECTS ->
+        "الخادم أعاد تحويلات كثيرة؛ استخدم رابط الملف المباشر النهائي."
+    DownloadManager.ERROR_INSUFFICIENT_SPACE ->
+        "مساحة التخزين غير كافية لإكمال التنزيل."
+    DownloadManager.ERROR_DEVICE_NOT_FOUND ->
+        "تعذر الوصول إلى وحدة التخزين لحفظ الملف."
+    DownloadManager.ERROR_CANNOT_RESUME ->
+        "تعذر استكمال التنزيل المتوقف؛ أعد المحاولة برابط صالح."
+    DownloadManager.ERROR_FILE_ALREADY_EXISTS ->
+        "يوجد ملف بالاسم نفسه في مجلد Downloads."
+    DownloadManager.ERROR_FILE_ERROR ->
+        "حدث خطأ أثناء إنشاء الملف أو حفظه."
+    DownloadManager.ERROR_UNKNOWN ->
+        "حدث خطأ غير معروف في مدير تنزيلات Android."
+    else -> "فشل التنزيل (رمز الخطأ: $reason)."
+}
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -381,12 +415,12 @@ private fun OudiApp(context: Context) {
                                                                 }
                                                                 DownloadManager.STATUS_PAUSED -> {
                                                                     val reason = it.getInt(it.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON))
-                                                                    status = "التنزيل متوقف مؤقتًا (السبب: $reason). تحقق من الاتصال أو إعدادات الشبكة."
+                                                                    status = describeDownloadPause(reason)
                                                                 }
                                                                 DownloadManager.STATUS_SUCCESSFUL -> status = "اكتمل تنزيل ${format.label} بنجاح في مجلد Downloads."
                                                                 DownloadManager.STATUS_FAILED -> {
                                                                     val reason = it.getInt(it.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON))
-                                                                    status = "فشل التنزيل (رمز الخطأ: $reason). قد يكون الرابط منتهي الصلاحية أو يتطلب صلاحية وصول."
+                                                                    status = describeDownloadFailure(reason)
                                                                 }
                                                             }
                                                             if (downloadStatus == DownloadManager.STATUS_PENDING || downloadStatus == DownloadManager.STATUS_RUNNING || downloadStatus == DownloadManager.STATUS_PAUSED) {
