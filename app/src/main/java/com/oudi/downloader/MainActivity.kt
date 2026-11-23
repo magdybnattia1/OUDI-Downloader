@@ -123,6 +123,7 @@ private fun OudiApp(context: Context) {
     var inspectedFileName by remember { mutableStateOf("") }
     var isInspecting by remember { mutableStateOf(false) }
     var formatMenuExpanded by remember { mutableStateOf(false) }
+    var inspectionGeneration by remember { mutableStateOf(0) }
     val appVersion = remember {
         runCatching {
             context.packageManager.getPackageInfo(context.packageName, 0).versionName
@@ -189,6 +190,8 @@ private fun OudiApp(context: Context) {
                             value = url,
                             onValueChange = {
                                 url = it
+                                inspectionGeneration += 1
+                                isInspecting = false
                                 availableFormats = emptyList()
                                 selectedFormat = null
                                 inspectedFileName = ""
@@ -230,6 +233,8 @@ private fun OudiApp(context: Context) {
                                     selectedFormat = null
                                     status = "رابط مشاهدة YouTube ليس رابط ملف قابلًا للتنزيل. استخدم خيارات YouTube الرسمية."
                                 } else {
+                                    inspectionGeneration += 1
+                                    val requestGeneration = inspectionGeneration
                                     isInspecting = true
                                     availableFormats = emptyList()
                                     selectedFormat = null
@@ -291,6 +296,7 @@ private fun OudiApp(context: Context) {
                                         }
 
                                         Handler(Looper.getMainLooper()).post {
+                                            if (requestGeneration != inspectionGeneration) return@post
                                             isInspecting = false
                                             availableFormats = foundFormats
                                             selectedFormat = foundFormats.firstOrNull()
