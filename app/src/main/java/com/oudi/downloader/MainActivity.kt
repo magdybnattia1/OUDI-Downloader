@@ -72,6 +72,36 @@ private fun buildDownloadFileName(requestedName: String, guessedName: String): S
     return if (hasExtension || fallbackExtension == null) cleaned else "$cleaned.$fallbackExtension"
 }
 
+private fun existingDownloadTitles(manager: DownloadManager): Set<String> {
+    val titles = mutableSetOf<String>()
+    runCatching {
+        manager.query(DownloadManager.Query())?.use { cursor ->
+            val titleColumn = cursor.getColumnIndex(DownloadManager.COLUMN_TITLE)
+            if (titleColumn >= 0) {
+                while (cursor.moveToNext()) {
+                    cursor.getString(titleColumn)?.takeIf { it.isNotBlank() }?.let(titles::add)
+                }
+            }
+        }
+    }
+    return titles
+}
+
+private fun uniqueDownloadFileName(fileName: String, existingTitles: Set<String>): String {
+    if (fileName !in existingTitles) return fileName
+
+    val extensionStart = fileName.lastIndexOf('.').takeIf { it > 0 } ?: fileName.length
+    val baseName = fileName.substring(0, extensionStart)
+    val extension = fileName.substring(extensionStart)
+    var suffix = 2
+    var candidate: String
+    do {
+        candidate = "$baseName ($suffix)$extension"
+        suffix += 1
+    } while (candidate in existingTitles)
+    return candidate
+}
+
 private fun describeDownloadPause(reason: Int): String = when (reason) {
     DownloadManager.PAUSED_WAITING_TO_RETRY ->
         "الاتصال انقطع مؤقتًا؛ سيحاول Android استكمال التنزيل تلقائيًا."
@@ -370,7 +400,9 @@ private fun OudiApp(context: Context) {
                                             } else {
                                                 val guessedFileName = URLUtil.guessFileName(format.url, null, format.mimeType)
                                                 val preferredName = title.ifBlank { inspectedFileName }
-                                                val fileName = buildDownloadFileName(preferredName, guessedFileName)
+                                                val requestedFileName = buildDownloadFileName(preferredName, guessedFileName)
+                                                val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                                                val fileName = uniqueDownloadFileName(requestedFileName, existingDownloadTitles(manager))
                                                 val request = DownloadManager.Request(mediaUri)
                                                     .setTitle(fileName)
                                                     .setDescription("OUDI Downloader • ${format.label}")
@@ -389,7 +421,6 @@ private fun OudiApp(context: Context) {
                                                 if (isFacebookSource && isFacebookCdn && format.sourcePageUrl.startsWith("https://")) {
                                                     request.addRequestHeader("Referer", format.sourcePageUrl)
                                                 }
-                                                val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
                                                 val downloadId = manager.enqueue(request)
                                                 status = "تمت إضافة الطلب إلى مدير Android. جاري التحقق من حالة التنزيل..."
                                                 val handler = Handler(Looper.getMainLooper())
