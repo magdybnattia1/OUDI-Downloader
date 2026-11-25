@@ -17,6 +17,10 @@ import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.delay
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -136,6 +140,58 @@ private fun describeDownloadFailure(reason: Int): String = when (reason) {
     else -> "فشل التنزيل (رمز الخطأ: $reason)."
 }
 
+
+private data class DownloadSnapshot(
+    val id: Long,
+    val title: String,
+    val detail: String,
+    val progressPercent: Int?
+)
+
+private fun loadRecentDownloads(manager: DownloadManager): List<DownloadSnapshot> = runCatching {
+    val downloads = mutableListOf<DownloadSnapshot>()
+    val query = DownloadManager.Query().orderBy(
+        DownloadManager.COLUMN_LAST_MODIFIED_TIMESTAMP,
+        DownloadManager.Query.ORDER_DESCENDING
+    )
+    manager.query(query)?.use { cursor ->
+        val idColumn = cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_ID)
+        val titleColumn = cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_TITLE)
+        val statusColumn = cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS)
+        val reasonColumn = cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON)
+        val downloadedColumn = cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)
+        val totalColumn = cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
+
+        while (cursor.moveToNext() && downloads.size < 8) {
+            val downloadStatus = cursor.getInt(statusColumn)
+            val reason = cursor.getInt(reasonColumn)
+            val downloaded = cursor.getLong(downloadedColumn).coerceAtLeast(0L)
+            val total = cursor.getLong(totalColumn)
+            val progress = if (total > 0L) {
+                ((downloaded * 100L) / total).coerceIn(0L, 100L).toInt()
+            } else {
+                null
+            }
+            val detail = when (downloadStatus) {
+                DownloadManager.STATUS_PENDING -> "في انتظار البدء"
+                DownloadManager.STATUS_RUNNING -> progress?.let { "جارٍ التنزيل • $it%" }
+                    ?: "جارٍ التنزيل • ${downloaded / 1024} كيلوبايت"
+                DownloadManager.STATUS_PAUSED -> describeDownloadPause(reason)
+                DownloadManager.STATUS_SUCCESSFUL -> "اكتمل التنزيل"
+                DownloadManager.STATUS_FAILED -> describeDownloadFailure(reason)
+                else -> "حالة التنزيل غير معروفة"
+            }
+            downloads += DownloadSnapshot(
+                id = cursor.getLong(idColumn),
+                title = cursor.getString(titleColumn)?.ifBlank { "تنزيل بدون اسم" } ?: "تنزيل بدون اسم",
+                detail = detail,
+                progressPercent = progress
+            )
+        }
+    }
+    downloads
+}.getOrDefault(emptyList())
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -154,6 +210,11 @@ private fun OudiApp(context: Context) {
     var isInspecting by remember { mutableStateOf(false) }
     var formatMenuExpanded by remember { mutableStateOf(false) }
     var inspectionGeneration by remember { mutableStateOf(0) }
+    val downloadManager = remember {
+        context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+    }
+    var recentDownloads by remember { mutableStateOf<List<DownloadSnapshot>>(emptyList()) }
+    val lifecycleOwner = context as? LifecycleOwner
     val appVersion = remember {
         runCatching {
             context.packageManager.getPackageInfo(context.packageName, 0).versionName
@@ -185,6 +246,16 @@ private fun OudiApp(context: Context) {
             context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) {
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
+    LaunchedEffect(lifecycleOwner, downloadManager) {
+        val lifecycle = lifecycleOwner?.lifecycle ?: return@LaunchedEffect
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                recentDownloads = loadRecentDownloads(downloadManager)
+                delay(1000L)
+            }
         }
     }
 
@@ -401,7 +472,7 @@ private fun OudiApp(context: Context) {
                                                 val guessedFileName = URLUtil.guessFileName(format.url, null, format.mimeType)
                                                 val preferredName = title.ifBlank { inspectedFileName }
                                                 val requestedFileName = buildDownloadFileName(preferredName, guessedFileName)
-                                                val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                                                val manager = downloadManager
                                                 val fileName = uniqueDownloadFileName(requestedFileName, existingDownloadTitles(manager))
                                                 val request = DownloadManager.Request(mediaUri)
                                                     .setTitle(fileName)
@@ -422,51 +493,8 @@ private fun OudiApp(context: Context) {
                                                     request.addRequestHeader("Referer", format.sourcePageUrl)
                                                 }
                                                 val downloadId = manager.enqueue(request)
-                                                status = "تمت إضافة الطلب إلى مدير Android. جاري التحقق من حالة التنزيل..."
-                                                val handler = Handler(Looper.getMainLooper())
-                                                val query = DownloadManager.Query().setFilterById(downloadId)
-                                                val monitor = object : Runnable {
-                                                    override fun run() {
-                                                        val cursor = manager.query(query)
-                                                        if (cursor == null) {
-                                                            status = "تعذر قراءة حالة التنزيل رقم $downloadId"
-                                                            return
-                                                        }
-                                                        cursor.use {
-                                                            if (!it.moveToFirst()) {
-                                                                status = "لم يعد طلب التنزيل رقم $downloadId موجودًا"
-                                                                return
-                                                            }
-                                                            val downloadStatus = it.getInt(it.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
-                                                            val downloaded = it.getLong(it.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR))
-                                                            val total = it.getLong(it.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES))
-                                                            when (downloadStatus) {
-                                                                DownloadManager.STATUS_PENDING -> status = "التنزيل رقم $downloadId في انتظار البدء..."
-                                                                DownloadManager.STATUS_RUNNING -> {
-                                                                    status = if (total > 0L) {
-                                                                        val percent = (downloaded * 100L / total).coerceIn(0L, 100L)
-                                                                        "جاري تنزيل ${format.label}: $percent% (${downloaded / 1024} من ${total / 1024} كيلوبايت)"
-                                                                    } else {
-                                                                        "جاري تنزيل ${format.label}: تم استلام ${downloaded / 1024} كيلوبايت"
-                                                                    }
-                                                                }
-                                                                DownloadManager.STATUS_PAUSED -> {
-                                                                    val reason = it.getInt(it.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON))
-                                                                    status = describeDownloadPause(reason)
-                                                                }
-                                                                DownloadManager.STATUS_SUCCESSFUL -> status = "اكتمل تنزيل ${format.label} بنجاح في مجلد Downloads."
-                                                                DownloadManager.STATUS_FAILED -> {
-                                                                    val reason = it.getInt(it.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON))
-                                                                    status = describeDownloadFailure(reason)
-                                                                }
-                                                            }
-                                                            if (downloadStatus == DownloadManager.STATUS_PENDING || downloadStatus == DownloadManager.STATUS_RUNNING || downloadStatus == DownloadManager.STATUS_PAUSED) {
-                                                                handler.postDelayed(this, 1000L)
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                                handler.post(monitor)
+                                                status = "تمت إضافة التنزيل رقم $downloadId. سيواصل Android إدارته حتى بعد إغلاق التطبيق."
+                                                recentDownloads = loadRecentDownloads(manager)
                                             }
                                         } catch (e: Exception) {
                                             status = "تعذر بدء التنزيل: ${e.message ?: "خطأ غير معروف"}"
@@ -545,6 +573,23 @@ private fun OudiApp(context: Context) {
                         Icon(Icons.Default.PlayArrow, null, tint = Gold)
                         Spacer(Modifier.width(10.dp))
                         Text(status, color = Muted, fontSize = 13.sp)
+                    }
+                }
+                if (recentDownloads.isNotEmpty()) {
+                    Spacer(Modifier.height(14.dp))
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = Panel),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                            Text("التنزيلات الأخيرة", color = Gold, fontWeight = FontWeight.Bold)
+                            recentDownloads.forEach { item ->
+                                Spacer(Modifier.height(10.dp))
+                                Text(item.title, color = Color.White, fontWeight = FontWeight.SemiBold)
+                                Text(item.detail, color = Muted, fontSize = 12.sp)
+                                Text("رقم التنزيل: ${item.id}", color = Color.Gray, fontSize = 10.sp)
+                            }
+                        }
                     }
                 }
                 Spacer(Modifier.height(24.dp))
