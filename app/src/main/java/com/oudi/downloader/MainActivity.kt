@@ -145,15 +145,12 @@ private data class DownloadSnapshot(
     val id: Long,
     val title: String,
     val detail: String,
-    val progressPercent: Int?
+    val lastModified: Long
 )
 
 private fun loadRecentDownloads(manager: DownloadManager): List<DownloadSnapshot> = runCatching {
     val downloads = mutableListOf<DownloadSnapshot>()
-    val query = DownloadManager.Query().orderBy(
-        DownloadManager.COLUMN_LAST_MODIFIED_TIMESTAMP,
-        DownloadManager.Query.ORDER_DESCENDING
-    )
+    val query = DownloadManager.Query()
     manager.query(query)?.use { cursor ->
         val idColumn = cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_ID)
         val titleColumn = cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_TITLE)
@@ -161,6 +158,7 @@ private fun loadRecentDownloads(manager: DownloadManager): List<DownloadSnapshot
         val reasonColumn = cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON)
         val downloadedColumn = cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)
         val totalColumn = cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
+        val lastModifiedColumn = cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_LAST_MODIFIED_TIMESTAMP)
 
         while (cursor.moveToNext() && downloads.size < 8) {
             val downloadStatus = cursor.getInt(statusColumn)
@@ -185,11 +183,11 @@ private fun loadRecentDownloads(manager: DownloadManager): List<DownloadSnapshot
                 id = cursor.getLong(idColumn),
                 title = cursor.getString(titleColumn)?.ifBlank { "تنزيل بدون اسم" } ?: "تنزيل بدون اسم",
                 detail = detail,
-                progressPercent = progress
+                lastModified = cursor.getLong(lastModifiedColumn)
             )
         }
     }
-    downloads
+    downloads.sortedByDescending { it.lastModified }.take(8)
 }.getOrDefault(emptyList())
 
 class MainActivity : ComponentActivity() {
