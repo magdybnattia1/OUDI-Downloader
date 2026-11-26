@@ -224,6 +224,20 @@ private fun OudiApp(context: Context) {
     var notificationsEnabled by remember {
         mutableStateOf(notificationManager.areNotificationsEnabled())
     }
+    var legacyStoragePermissionGranted by remember {
+        mutableStateOf(
+            Build.VERSION.SDK_INT > Build.VERSION_CODES.P ||
+                context.checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+    val legacyStoragePermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        legacyStoragePermissionGranted = granted
+        if (!granted) {
+            status = "يلزم السماح بحفظ الملفات في مجلد التنزيلات على إصدارات Android القديمة."
+        }
+    }
     val notificationSettingsLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) {
@@ -499,7 +513,7 @@ private fun OudiApp(context: Context) {
                                         }
                                     }
                                 },
-                                enabled = selectedFormat != null,
+                                enabled = selectedFormat != null && legacyStoragePermissionGranted,
                                 modifier = Modifier.fillMaxWidth().height(50.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = Gold, contentColor = Black),
                                 shape = RoundedCornerShape(12.dp)
@@ -534,6 +548,33 @@ private fun OudiApp(context: Context) {
                                 Icon(Icons.Default.PlayArrow, null)
                                 Spacer(Modifier.width(8.dp))
                                 Text("افتح الفيديو على يوتيوب")
+                            }
+                        }
+                    }
+                }
+                if (availableFormats.isNotEmpty() &&
+                    Build.VERSION.SDK_INT <= Build.VERSION_CODES.P &&
+                    !legacyStoragePermissionGranted
+                ) {
+                    Spacer(Modifier.height(12.dp))
+                    Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(16.dp)) {
+                        Column(Modifier.padding(14.dp)) {
+                            Text("إذن حفظ الملفات مطلوب", color = Gold, fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "على Android 8 و9 يحتاج OUDI إلى إذن التخزين لحفظ الملفات داخل مجلد Downloads.",
+                                color = Muted,
+                                fontSize = 12.sp
+                            )
+                            Spacer(Modifier.height(10.dp))
+                            OutlinedButton(
+                                onClick = {
+                                    legacyStoragePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Gold)
+                            ) {
+                                Text("السماح بحفظ الملفات")
                             }
                         }
                     }
