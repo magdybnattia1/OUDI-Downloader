@@ -334,11 +334,7 @@ private fun OudiApp(context: Context) {
                         Button(
                             onClick = {
                                 val clean = url.trim()
-                                val parsed = runCatching { Uri.parse(clean) }.getOrNull()
-                                val host = parsed?.host?.lowercase().orEmpty()
-                                val isYouTubePage = host == "youtu.be" || host == "youtube.com" ||
-                                    host.endsWith(".youtube.com") || host == "youtube-nocookie.com" ||
-                                    host.endsWith(".youtube-nocookie.com")
+                                val isYouTubePage = isYouTubeUrl(clean)
                                 if (!(clean.startsWith("https://") || clean.startsWith("http://"))) {
                                     status = "أدخل رابط HTTP أو HTTPS صحيحًا"
                                 } else if (isYouTubePage) {
@@ -525,11 +521,7 @@ private fun OudiApp(context: Context) {
                         }
 
                         val cleanForYouTube = url.trim()
-                        val parsedForYouTube = runCatching { Uri.parse(cleanForYouTube) }.getOrNull()
-                        val youtubeHost = parsedForYouTube?.host?.lowercase().orEmpty()
-                        val isYouTubeLink = youtubeHost == "youtu.be" ||
-                            youtubeHost == "youtube.com" || youtubeHost.endsWith(".youtube.com") ||
-                            youtubeHost == "youtube-nocookie.com" || youtubeHost.endsWith(".youtube-nocookie.com")
+                        val isYouTubeLink = isYouTubeUrl(cleanForYouTube)
                         if (isYouTubeLink) {
                             Spacer(Modifier.height(10.dp))
                             OutlinedButton(

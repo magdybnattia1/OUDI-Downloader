@@ -17,7 +17,7 @@ function validateMediaUrl(raw) {
   if (!raw || raw.length > MAX_URL_LENGTH) throw new Error("رابط غير صالح أو أطول من المسموح");
   const url = new URL(raw);
   if (!["http:", "https:"].includes(url.protocol)) throw new Error("يسمح بروابط HTTP وHTTPS فقط");
-  const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.+$/, "");
   if (!host || host === "localhost" || host.endsWith(".localhost") ||
       host.endsWith(".local") || host.endsWith(".internal") ||
       /^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.includes(":")) {

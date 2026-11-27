@@ -15,6 +15,37 @@ function inspectRequest(mediaUrl) {
   url.searchParams.set("url", mediaUrl);
   return new Request(url);
 }
+test("rejects YouTube watch links and aliases before contacting the media host", async () => {
+  const originalFetch = globalThis.fetch;
+  let fetchCalled = false;
+  globalThis.fetch = async () => {
+    fetchCalled = true;
+    throw new Error("YouTube URLs must be rejected before fetch");
+  };
+
+  try {
+    const blockedUrls = [
+      "https://youtube.com/watch?v=abc",
+      "https://www.youtube.com/watch?v=abc",
+      "https://youtu.be/abc",
+      "https://www.youtu.be/abc",
+      "https://youtube.com./watch?v=abc",
+      "https://www.youtube.com./watch?v=abc",
+      "https://youtu.be./abc",
+      "https://youtube-nocookie.com/embed/abc"
+    ];
+    for (const mediaUrl of blockedUrls) {
+      const response = await worker.fetch(inspectRequest(mediaUrl));
+      const body = await response.json();
+      assert.equal(response.status, 400, mediaUrl);
+      assert.match(body.error, /روابط YouTube/, mediaUrl);
+    }
+    assert.equal(fetchCalled, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 
 test("probes the actual un-ranged GET and cancels its body after receiving headers", async () => {
   const originalFetch = globalThis.fetch;
