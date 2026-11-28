@@ -33,4 +33,23 @@ class YouTubeUrlPolicyTest {
             "https://"
         ).forEach { assertFalse("Must not classify as YouTube: $it", isYouTubeUrl(it)) }
     }
+
+    
+    @Test
+    fun rejectsYouTubeOrNonHttpFormatTargetsEvenWhenReturnedByApi() {
+        listOf(
+            "https://youtube.com/watch?v=abc",
+            "https://www.youtu.be/abc",
+            "https://youtube.com./watch?v=abc",
+            "ftp://cdn.example/video.mp4",
+            "file:///sdcard/video.mp4",
+            "javascript:alert(1)",
+            "not a URL"
+        ).forEach { assertFalse("Must not be a download target: $it", isAllowedDownloadTarget(it)) }
+
+        listOf(
+            "https://cdn.example/video.mp4",
+            "http://downloads.example/audio.mp3"
+        ).forEach { assertTrue("Expected direct HTTP(S) target: $it", isAllowedDownloadTarget(it)) }
+    }
 }

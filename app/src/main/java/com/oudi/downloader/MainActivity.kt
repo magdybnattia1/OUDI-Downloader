@@ -375,7 +375,7 @@ private fun OudiApp(context: Context) {
                                                         foundFormats = buildList {
                                                             for (index in 0 until formats.length()) {
                                                                 val item = formats.optJSONObject(index) ?: continue
-                                                                val itemUrl = item.optString("url").takeIf { it.isNotBlank() && it != "null" } ?: continue
+                                                                val itemUrl = item.optString("url").takeIf(::isAllowedDownloadTarget) ?: continue
                                                                 add(
                                                                     DownloadFormat(
                                                                         id = item.optString("id", "format-$index"),
@@ -473,10 +473,10 @@ private fun OudiApp(context: Context) {
                                 onClick = {
                                     selectedFormat?.let { format ->
                                         try {
-                                            val mediaUri = Uri.parse(format.url)
-                                            if (mediaUri.scheme !in listOf("http", "https")) {
-                                                status = "رابط التنزيل الناتج غير صالح"
+                                            if (!isAllowedDownloadTarget(format.url)) {
+                                                status = "رابط التنزيل الناتج غير صالح أو غير مسموح؛ روابط مشاهدة YouTube ليست ملفات قابلة للتنزيل."
                                             } else {
+                                                val mediaUri = Uri.parse(format.url)
                                                 val guessedFileName = URLUtil.guessFileName(format.url, null, format.mimeType)
                                                 val preferredName = title.ifBlank { inspectedFileName }
                                                 val requestedFileName = buildDownloadFileName(preferredName, guessedFileName)
